@@ -1,7 +1,6 @@
 """FlowPilot -- control-room dashboard.
 
-Shows the city road network, live alerts with evidence, 30-min forecasts,
-capacity-safe diversion recommendations, and a what-if simulator.
+See the jam before it forms. Stop it before it spreads.
 
 Run inside the flowpilot folder:
     py -m streamlit run app.py
@@ -25,7 +24,31 @@ DATA_DIR = next(
     None,
 )
 
-st.set_page_config(page_title="FlowPilot", layout="wide")
+st.set_page_config(page_title="FlowPilot", page_icon="🚦", layout="wide")
+
+# ---------------- styles ----------------
+st.markdown(
+    """
+    <style>
+    .fp-banner { background: linear-gradient(90deg, #0f2027, #203a43, #2c5364);
+                 padding: 20px 26px; border-radius: 14px; color: white;
+                 margin-bottom: 14px; }
+    .fp-banner h1 { margin: 0; font-size: 36px; color: white; }
+    .fp-tag { opacity: 0.85; font-size: 16px; margin-top: 6px; }
+    .fp-legend { display: flex; gap: 18px; margin: 8px 0; font-size: 14px; }
+    .dot { display: inline-block; width: 12px; height: 12px;
+           border-radius: 50%; margin-right: 6px; }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
+st.markdown(
+    '<div class="fp-banner"><h1>🚦 FlowPilot</h1>'
+    '<div class="fp-tag">See the jam before it forms. '
+    "Stop it before it spreads.</div></div>",
+    unsafe_allow_html=True,
+)
 
 
 @st.cache_resource
@@ -75,7 +98,6 @@ def predict_30min(d, seg, T):
            & (b["time_slot"] == tslot)]
     if bn.empty or bt.empty:
         return None
-    import pandas as pd  # noqa: F811
     X = pd.DataFrame([{
         "speed_lag0": lag[0], "speed_lag1": lag[1],
         "speed_lag2": lag[2], "speed_lag3": lag[3],
@@ -90,18 +112,34 @@ d = load_all()
 rec = d["recommender"]
 sim = d["sim"]
 
-# ---------------- header ----------------
-st.title("FlowPilot")
-st.caption("See the jam before it forms. Stop it before it spreads.")
-
-# ---------------- pick an alert ----------------
+# ---------------- sidebar ----------------
+st.sidebar.header("🚨 Active alerts")
 top = (d["anom"].sort_values("drop_pct", ascending=False)
        .drop_duplicates("segment_id").head(10))
 labels = [f"{r['segment_id']} @ {r['timestamp']} (-{r['drop_pct']:.0%} speed)"
           for _, r in top.iterrows()]
-choice = st.sidebar.selectbox("Active alerts", labels)
+choice = st.sidebar.selectbox("Pick an alert to investigate", labels)
 sel = top.iloc[labels.index(choice)]
 SEG, T = sel["segment_id"], pd.Timestamp(sel["timestamp"])
+
+st.sidebar.markdown("---")
+st.sidebar.markdown("**Map legend**")
+st.sidebar.markdown(
+    '<div class="fp-legend">'
+    '<span><span class="dot" style="background:#dc1e1e"></span>Alert</span>'
+    '<span><span class="dot" style="background:#f0a000"></span>Slowing</span>'
+    '<span><span class="dot" style="background:#1eb450"></span>Normal</span>'
+    "</div>",
+    unsafe_allow_html=True,
+)
+st.sidebar.caption("436 roads • 120 junctions • 15 days of data • 5-min resolution")
+
+# ---------------- KPI row ----------------
+n_alerts_now = d["anom"][d["anom"]["timestamp"] == T]["segment_id"].nunique()
+k1, k2, k3 = st.columns(3)
+k1.metric("🚨 Alerts at this moment", n_alerts_now)
+k2.metric("🛣️ Roads monitored", "436")
+k3.metric("📉 Worst speed drop", f"{top.iloc[0]['drop_pct']:.0%}")
 
 # ---------------- map ----------------
 t = d["traffic"]
@@ -131,6 +169,7 @@ for seg, (u, v) in d["seg_nodes"].items():
     lon2, lat2 = d["coord"][v]
     lines.append({"source": [lon1, lat1], "target": [lon2, lat2],
                   "color": color, "segment_id": seg,
+                  "width": 5 if seg in anom_set else 2,
                   "label": f"{seg}: {sp:.0f} km/h (normal {normal:.0f})"})
 
 lats = [c[1] for c in d["coord"].values()]
@@ -139,64 +178,82 @@ view = pdk.ViewState(latitude=sum(lats) / len(lats),
                      longitude=sum(lons) / len(lons), zoom=10.5)
 layer = pdk.Layer("LineLayer", data=lines,
                   get_source_position="source", get_target_position="target",
-                  get_color="color", get_width=5, pickable=True)
+                  get_color="color", get_width="width", pickable=True,
+                  opacity=0.85)
 st.pydeck_chart(pdk.Deck(layers=[layer], initial_view_state=view,
                          tooltip={"text": "{label}"}))
-st.caption(f"Road status at {T} -- red = alert, yellow = slowing, green = normal")
+st.caption(f"Network status at {T} — hover any road for details.")
 
 # ---------------- detail tabs ----------------
-tab1, tab2, tab3, tab4 = st.tabs(["Evidence", "Forecast", "Action", "What-if lab"])
+tab1, tab2, tab3, tab4 = st.tabs(
+    ["🔍 Evidence", "🔮 Forecast", "✅ Action", "🔬 What-if lab"])
 
 with tab1:
     st.subheader(f"Alert: {SEG}")
-    st.metric("Current speed", f"{sel['speed_kmh']:.0f} km/h",
-              delta=f"{sel['speed_kmh'] - sel['speed_median']:.0f} vs normal")
-    st.write(f"Normal for this road at this time: **{sel['speed_median']:.0f} km/h**")
-    st.write(f"Drop: **{sel['drop_pct']:.0%}** -- flagged as abnormal congestion.")
+    m1, m2, m3 = st.columns(3)
+    m1.metric("Current speed", f"{sel['speed_kmh']:.0f} km/h",
+              delta=f"{sel['speed_kmh'] - sel['speed_median']:.0f} vs normal",
+              delta_color="inverse")
+    m2.metric("Normal for this time", f"{sel['speed_median']:.0f} km/h")
+    m3.metric("Speed drop", f"{sel['drop_pct']:.0%}")
+    st.info("The system learned this road's normal hour-by-hour, so it knows "
+            "this isn't routine traffic — it's abnormal.")
 
 with tab2:
     pred = predict_30min(d, SEG, T)
     if pred is None:
-        st.write("Not enough history to forecast this segment.")
+        st.warning("Not enough history to forecast this segment.")
     else:
-        st.metric("Predicted speed in 30 min", f"{pred:.0f} km/h")
-        st.caption("Typical error when traffic is changing: +/-3.2 km/h "
+        st.metric("Predicted speed in 30 min", f"{pred:.0f} km/h",
+                  delta=f"{pred - sel['speed_kmh']:.0f} km/h from now")
+        st.caption("Typical error when traffic is changing: ±3.2 km/h "
                    "(measured on validation data).")
+        if pred < sel["speed_median"] * 0.7:
+            st.error("⚠️ Jam expected to persist or worsen — act now.")
+        else:
+            st.success("✅ Conditions expected to improve.")
 
 with tab3:
+    st.subheader("Recommended actions")
     recs = rec.recommend(SEG, d["G"], d["seg_edge"], d["cap"], d["length"],
                          d["ffs"], d["mean_flow"])
     if not recs:
-        st.warning("No SAFE diversion: every alternate road is too full. "
-                   "Recommendation: hold traffic and alert on the ground.")
+        st.warning("⛔ No SAFE diversion: every alternate road is too full. "
+                   "Recommendation: hold traffic and alert ground teams.")
     for i, r in enumerate(recs[:2], 1):
-        st.markdown(f"**Option {i}** -- via {' -> '.join(r['via'])}")
-        st.write(f"+{r['extra_km']} km, +{r['extra_min']} min. "
-                 f"Bottleneck {r['bottleneck']} at {r['worst_ratio']*100:.0f}% "
-                 f"capacity ({r['headroom_pct']}% headroom). "
-                 f"Safe: will not create a new jam.")
-    if st.button("Simulate: follow option 1"):
+        st.markdown(f"**Option {i}** — via {' → '.join(r['via'])}")
+        a, b, c = st.columns(3)
+        a.metric("Extra distance", f"+{r['extra_km']} km")
+        b.metric("Extra time", f"+{r['extra_min']} min")
+        c.metric("Spare capacity", f"{r['headroom_pct']}%")
+        st.caption(f"Bottleneck {r['bottleneck']} at "
+                   f"{r['worst_ratio']*100:.0f}% capacity — safe, "
+                   "will not create a new jam.")
+    if recs and st.button("▶ Simulate: follow option 1", type="primary"):
         flow = d["mean_flow"].get(SEG, 0)
         cap_eff = sim.calibrate_capacity(d["length"][SEG], d["ffs"][SEG],
                                          flow, sel["speed_kmh"], d["cap"][SEG])
         tb = sim.bpr_minutes(d["length"][SEG], d["ffs"][SEG], flow, cap_eff)
         ta = sim.bpr_minutes(d["length"][SEG], d["ffs"][SEG],
                              flow * 0.7, cap_eff)
-        st.write(f"Stayers: {tb:.1f} -> {ta:.1f} min per vehicle.")
-        if recs:
-            div = flow * 0.3
-            alt = sum(sim.bpr_minutes(d["length"][s], d["ffs"][s],
-                                      d["mean_flow"].get(s, 0) + div,
-                                      d["cap"].get(s, 1)) for s in recs[0]["via"])
-            st.write(f"Diverters: {alt:.1f} min vs {tb:.1f} staying.")
-            st.success(f"Estimated total: "
-                       f"{flow*0.7*(tb-ta) + div*max(tb-alt,0):,.0f} "
-                       f"vehicle-minutes saved per hour. (PROTOTYPE)")
-        st.caption("PROTOTYPE SIMULATION -- estimates, not guarantees.")
+        s1, s2 = st.columns(2)
+        s1.metric("Stayers: before", f"{tb:.1f} min/veh")
+        s2.metric("Stayers: after", f"{ta:.1f} min/veh",
+                  delta=f"-{tb - ta:.1f} min")
+        div = flow * 0.3
+        alt = sum(sim.bpr_minutes(d["length"][s], d["ffs"][s],
+                                  d["mean_flow"].get(s, 0) + div,
+                                  d["cap"].get(s, 1)) for s in recs[0]["via"])
+        st.write(f"Diverters: **{alt:.1f} min** vs {tb:.1f} staying "
+                 f"(save {tb - alt:.1f} min each).")
+        total = flow * 0.7 * (tb - ta) + div * max(tb - alt, 0)
+        st.success(f"Estimated total: **{total:,.0f} vehicle-minutes "
+                   "saved per hour.**")
+        st.caption("PROTOTYPE SIMULATION — estimates, not guarantees.")
 
 with tab4:
     st.subheader("What-if infrastructure lab")
-    st.caption("PROTOTYPE -- test ideas before spending money.")
+    st.caption("PROTOTYPE — test ideas before spending money.")
     wseg = st.selectbox("Road", sorted(d["seg_nodes"].keys()),
                         index=sorted(d["seg_nodes"].keys()).index(SEG))
     delta = st.slider("Extra capacity (veh/h)", 0, 1200, 600, step=50)
@@ -204,9 +261,10 @@ with tab4:
     tb = sim.bpr_minutes(d["length"][wseg], d["ffs"][wseg], flow, d["cap"][wseg])
     ta = sim.bpr_minutes(d["length"][wseg], d["ffs"][wseg],
                          flow, d["cap"][wseg] + delta)
-    st.write(f"{wseg}: {tb:.1f} -> {ta:.1f} min per vehicle "
-             f"(save {tb-ta:.1f} min each).")
+    w1, w2 = st.columns(2)
+    w1.metric("Travel time now", f"{tb:.1f} min/veh")
+    w2.metric("With upgrade", f"{ta:.1f} min/veh", delta=f"-{tb - ta:.1f} min")
 
 st.divider()
-st.caption("FlowPilot prototype -- built on the organizer's 15-day dataset. "
+st.caption("FlowPilot prototype — built on the organizer's 15-day dataset. "
            "Simulations are estimates for decision support.")

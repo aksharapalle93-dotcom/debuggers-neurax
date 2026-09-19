@@ -1,0 +1,8 @@
+streamlit
+pandas
+scikit-learn
+networkx
+pydeck
+numpy
+scipy
+pyarrow

@@ -291,3 +291,33 @@ with tab4:
 st.divider()
 st.caption("FlowPilot prototype — built on the organizer's 15-day dataset. "
            "Simulations are estimates for decision support.")
+
+# ---------------- app-like polish (look only -- no logic changes) ----------------
+st.markdown(
+    """
+    <style>
+    /* Hide Streamlit's default chrome so it feels like a standalone app.
+       The header stays functional (sidebar toggle still works) but invisible. */
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
+    .stDeployButton {display: none;}
+    div[data-testid="stToolbar"] {visibility: hidden;}
+    header[data-testid="stHeader"] {background: rgba(0,0,0,0);}
+
+    /* KPI cards: rounded, phone-friendly */
+    div[data-testid="stMetric"] {
+        background: rgba(255,255,255,0.04);
+        border: 1px solid rgba(0,229,255,0.25);
+        border-radius: 16px;
+        padding: 10px 14px;
+    }
+
+    /* Sidebar: clean dark look */
+    section[data-testid="stSidebar"] {background: #0d0d1a;}
+
+    /* Tabs: bigger tap targets on phones */
+    button[data-baseweb="tab"] {font-size: 1rem; padding: 12px 6px;}
+    </style>
+    """,
+    unsafe_allow_html=True,
+)

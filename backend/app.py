@@ -301,7 +301,6 @@ st.markdown(
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
     .stDeployButton {display: none;}
-    div[data-testid="stToolbar"] {visibility: hidden;}
     header[data-testid="stHeader"] {background: rgba(0,0,0,0);}
 
     /* KPI cards: rounded, phone-friendly */

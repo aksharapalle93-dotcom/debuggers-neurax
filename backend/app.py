@@ -340,14 +340,36 @@ def load_system_assets():
     }
 
 
-@st.cache_data(show_spinner="Syncing 1.88M audited telemetry records & historical baselines...")
+class _BaseLookup:
+    """Memory-light drop-in for the 879K-entry baseline dict (~260MB -> ~50MB).
+
+    Same interface: .get((segment_id, day_of_week, time_slot), (default_median, default_std))
+    returns (median, std). Backed by two MultiIndex Series sharing one index.
+    """
+
+    def __init__(self, med, std):
+        self._med = med
+        self._std = std
+
+    def get(self, key, default=(35.0, 5.0)):
+        seg, dow, slot = key
+        try:
+            return (
+                float(self._med.loc[(seg, int(dow), int(slot))]),
+                float(self._std.loc[(seg, int(dow), int(slot))]),
+            )
+        except KeyError:
+            return (float(default[0]), float(default[1]))
+
+
+@st.cache_resource(show_spinner="Syncing 1.88M audited telemetry records & historical baselines...")
 def load_tabular_data():
     """Load all tabular data: network metadata, nodes, baselines, clean telemetry."""
     net = pd.read_csv(HERE / "network.csv")
     nodes = pd.read_csv(HERE / "nodes.csv")
     base = pd.read_csv(HERE / "baselines.csv")
     anom = pd.read_csv(HERE / "anomalies.csv")
-    traffic = pd.read_parquet(HERE / "traffic_clean.parquet")
+    traffic = pd.read_parquet(HERE / "traffic_clean.parquet", columns=["timestamp", "segment_id", "speed_kmh", "flow_vph", "occupancy_pct", "travel_time_min", "delay_min", "queue_length_veh", "congestion_index", "sensor_quality"])
 
     # Fast node coordinates mapping: node_id -> (lon, lat)
     coord = {r["node_id"]: (float(r["lon"]), float(r["lat"])) for _, r in nodes.iterrows()}
@@ -355,13 +377,9 @@ def load_tabular_data():
     # Segment metadata index
     net_dict = net.set_index("segment_id").to_dict(orient="index")
 
-    # Fast baseline lookup dictionary: (segment_id, day_of_week, time_slot) -> (median, std)
-    base_dict = {}
-    for _, r in base.iterrows():
-        base_dict[(r["segment_id"], int(r["day_of_week"]), int(r["time_slot"]))] = (
-            float(r["speed_median"]),
-            float(r["speed_std"]),
-        )
+    # Memory-light baseline lookup: MultiIndex Series (~50MB) instead of 879K-entry dict (~260MB)
+    base_idx = base.set_index(["segment_id", "day_of_week", "time_slot"])
+    base_dict = _BaseLookup(base_idx["speed_median"], base_idx["speed_std"])
 
     return {
         "net": net,

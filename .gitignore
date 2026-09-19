@@ -5,3 +5,4 @@
 NEURAX_SMART_CITIES_TRAINING_V2/
 __pycache__/
 .streamlit/
+.env

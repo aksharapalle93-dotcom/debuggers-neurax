@@ -1,8 +1,5 @@
-*.parquet
-*.pkl
-*.csv
-*.zip
-NEURAX_SMART_CITIES_TRAINING_V2/
+.env
 __pycache__/
 .streamlit/
-.env
+*.zip
+NEURAX_SMART_CITIES_TRAINING_V2/

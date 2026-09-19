@@ -230,3 +230,9 @@ No numerical performance claim will be added until it has been measured.
 - **Prototype simulation:** Before/after intervention impact will be estimated by the prototype, not claimed as a real deployment result.
 
 The next milestone is to inspect the organizer-provided datasets and update this README with the confirmed schema, chosen features, final model, measured validation results, and reproducible run instructions.
+## Results
+
+- **Anomaly detection:** 787 anomalies flagged; caught 31/49 labeled incidents (63%)
+- **Forecasting:** 43% better than the naive baseline when traffic actually changes (MAE 3.16 vs 5.53 km/h in volatile periods)
+- **Diversion:** worst jam (R0183) got 2 safe alternate routes with 53%+ spare capacity — no new jam created
+- **Simulation (prototype):** diverting 30% of traffic cuts travel time 7.2 → 3.3 min/vehicle, saving ~2,312 vehicle-minutes per hour

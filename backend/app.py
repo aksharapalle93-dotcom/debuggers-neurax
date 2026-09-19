@@ -3,7 +3,7 @@
 See the jam before it forms. Stop it before it spreads.
 
 Run inside the flowpilot folder:
-    py -m streamlit run app.py
+    py -m streamlit run app-2.py
 """
 
 import os
@@ -30,14 +30,31 @@ st.set_page_config(page_title="FlowPilot", page_icon="🚦", layout="wide")
 st.markdown(
     """
     <style>
-    .fp-banner { background: linear-gradient(90deg, #0f2027, #203a43, #2c5364);
-                 padding: 20px 26px; border-radius: 14px; color: white;
-                 margin-bottom: 14px; }
-    .fp-banner h1 { margin: 0; font-size: 36px; color: white; }
-    .fp-tag { opacity: 0.85; font-size: 16px; margin-top: 6px; }
-    .fp-legend { display: flex; gap: 18px; margin: 8px 0; font-size: 14px; }
-    .dot { display: inline-block; width: 12px; height: 12px;
-           border-radius: 50%; margin-right: 6px; }
+    .fp-banner {
+        background: linear-gradient(135deg, #FF007A, #7000FF, #00E5FF);
+        background-size: 200% 200%;
+        animation: gradientShift 10s ease infinite;
+        padding: 24px 30px;
+        border-radius: 16px;
+        color: white;
+        margin-bottom: 16px;
+        box-shadow: 0 8px 32px rgba(112, 0, 255, 0.4);
+    }
+    @keyframes gradientShift {
+        0% { background-position: 0% 50%; }
+        50% { background-position: 100% 50%; }
+        100% { background-position: 0% 50%; }
+    }
+    .fp-banner h1 { margin: 0; font-size: 42px; color: #FFFFFF; font-weight: 900; text-shadow: 2px 2px 8px rgba(0,0,0,0.3); }
+    .fp-tag { opacity: 0.95; font-size: 18px; margin-top: 6px; font-weight: 600; color: #E0FFFF; }
+    .fp-legend { display: flex; gap: 24px; margin: 12px 0; font-size: 15px; font-weight: bold; }
+    .dot { display: inline-block; width: 14px; height: 14px;
+           border-radius: 50%; margin-right: 8px; }
+
+    div[data-testid="stMetricValue"] {
+        color: #00E5FF !important;
+        text-shadow: 0 0 12px rgba(0, 229, 255, 0.4);
+    }
     </style>
     """,
     unsafe_allow_html=True,
@@ -126,9 +143,8 @@ st.sidebar.markdown("---")
 st.sidebar.markdown("**Map legend**")
 st.sidebar.markdown(
     '<div class="fp-legend">'
-    '<span><span class="dot" style="background:#dc1e1e"></span>Alert</span>'
-    '<span><span class="dot" style="background:#f0a000"></span>Slowing</span>'
-    '<span><span class="dot" style="background:#1eb450"></span>Normal</span>'
+    '<span><span class="dot" style="background:#FF007A;box-shadow:0 0 12px #FF007A"></span>Critical Alert</span>'
+    '<span><span class="dot" style="background:#00E5FF;box-shadow:0 0 10px #00E5FF"></span>Slowing</span>'
     "</div>",
     unsafe_allow_html=True,
 )
@@ -148,7 +164,7 @@ ts = pd.Timestamp(T)
 dow, slot = ts.dayofweek, ts.hour * 12 + ts.minute // 5
 bmap = d["base"].set_index(["segment_id", "day_of_week", "time_slot"])["speed_median"]
 
-lines = []
+alert_lines, slow_lines = [], []
 anom_set = set(d["anom"][d["anom"]["timestamp"] == T]["segment_id"])
 for seg, (u, v) in d["seg_nodes"].items():
     if seg not in now or u not in d["coord"] or v not in d["coord"]:
@@ -159,33 +175,37 @@ for seg, (u, v) in d["seg_nodes"].items():
     except KeyError:
         continue
     drop = (normal - sp) / normal if normal else 0
-    if seg in anom_set:
-        color = [235, 45, 45]
-    elif drop > 0.15:
-        color = [240, 160, 0]
-    else:
-        color = [70, 130, 95]
     lon1, lat1 = d["coord"][u]
     lon2, lat2 = d["coord"][v]
-    lines.append({"source": [lon1, lat1], "target": [lon2, lat2],
-                  "color": color, "segment_id": seg,
-                  "width": 7 if seg in anom_set else (3 if drop > 0.15 else 1.2),
-                  "label": f"{seg}: {sp:.0f} km/h (normal {normal:.0f})"})
+    label = f"{seg}: {sp:.0f} km/h (normal {normal:.0f})"
+    if seg in anom_set:
+        alert_lines.append({"source": [lon1, lat1], "target": [lon2, lat2],
+                            "label": label})
+    elif drop > 0.15:
+        slow_lines.append({"source": [lon1, lat1], "target": [lon2, lat2],
+                           "label": label})
 
 lats = [c[1] for c in d["coord"].values()]
 lons = [c[0] for c in d["coord"].values()]
 view = pdk.ViewState(latitude=sum(lats) / len(lats),
                      longitude=sum(lons) / len(lons), zoom=10.5)
-layer = pdk.Layer("LineLayer", data=lines,
-                  get_source_position="source", get_target_position="target",
-                  get_color="color", get_width="width", pickable=True,
-                  opacity=0.85)
+
+halo = pdk.Layer("LineLayer", data=alert_lines,
+                 get_source_position="source", get_target_position="target",
+                 get_color=[255, 0, 122, 110], get_width=25, pickable=False)
+core = pdk.Layer("LineLayer", data=alert_lines,
+                 get_source_position="source", get_target_position="target",
+                 get_color=[255, 255, 255, 255], get_width=5, pickable=True)
+slow = pdk.Layer("LineLayer", data=slow_lines,
+                 get_source_position="source", get_target_position="target",
+                 get_color=[0, 229, 255, 230], get_width=6, pickable=True)
+
 st.pydeck_chart(pdk.Deck(
-    layers=[layer],
+    layers=[halo, core, slow],
     initial_view_state=view,
     map_style="https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json",
     tooltip={"text": "{label}"}))
-st.caption(f"Network status at {T} — control-room schematic view, hover any road for details.")
+st.caption(f"Live alerts at {T} — glowing roads need attention, hover for details.")
 
 # ---------------- detail tabs ----------------
 tab1, tab2, tab3, tab4 = st.tabs(
@@ -251,7 +271,7 @@ with tab3:
                  f"(save {tb - alt:.1f} min each).")
         total = flow * 0.7 * (tb - ta) + div * max(tb - alt, 0)
         st.success(f"Estimated total: **{total:,.0f} vehicle-minutes "
-                   "saved per hour.**")
+                   "saved per hour.")
         st.caption("PROTOTYPE SIMULATION — estimates, not guarantees.")
 
 with tab4:

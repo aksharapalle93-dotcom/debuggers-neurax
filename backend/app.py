@@ -470,7 +470,11 @@ selected_label = st.sidebar.selectbox(
     help="Selecting an incident recomputes all control room KPIs, network map layers, and detailed tabs.",
 )
 
-sel_row = picker_df.iloc[picker_labels.index(selected_label)]
+try:
+    sel_idx = picker_labels.index(selected_label)
+except (ValueError, IndexError):
+    sel_idx = 0
+sel_row = picker_df.iloc[sel_idx]
 SEG = str(sel_row["segment_id"])
 T = pd.Timestamp(sel_row["timestamp"])
 
@@ -645,9 +649,9 @@ for s_id, (u, v) in seg_edge.items():
     r_class = meta.get("road_class", "arterial")
 
     label = (
-        f"Road: {s_id} ({u} → {v})\n"
-        f"Class: {r_class.title()} | Speed: {cur_speed:.1f} km/h (Normal: {med_speed:.1f} km/h)\n"
-        f"Speed Deviation: -{speed_drop:.0%}"
+        f"{s_id} ({u} -> {v}) | {r_class.title()} | "
+        f"Speed: {cur_speed:.1f} km/h (Normal: {med_speed:.1f} km/h) | "
+        f"Drop: -{speed_drop:.0%}"
     )
 
     line_obj = {"source": [lon1, lat1], "target": [lon2, lat2], "label": label, "segment_id": s_id}
@@ -731,15 +735,7 @@ map_deck = pdk.Deck(
     layers=[normal_layer, slowing_layer, diversion_layer, alert_halo, alert_core],
     initial_view_state=view_state,
     map_style="https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json",
-    tooltip={
-        "html": """
-        <div style="background:#0a0a16; border:1px solid #00E5FF; padding:8px 12px; border-radius:8px; color:#FFFFFF; font-family:'Outfit', sans-serif;">
-            <b style="color:#00E5FF; font-size:14px;">{segment_id}</b><br>
-            <span style="font-size:12px; color:#CBD5E1;">{label}</span>
-        </div>
-        """,
-        "style": {"color": "white"},
-    },
+    tooltip={"text": "{label}"},
 )
 
 st.pydeck_chart(map_deck)

@@ -160,16 +160,16 @@ for seg, (u, v) in d["seg_nodes"].items():
         continue
     drop = (normal - sp) / normal if normal else 0
     if seg in anom_set:
-        color = [220, 30, 30]
+        color = [235, 45, 45]
     elif drop > 0.15:
         color = [240, 160, 0]
     else:
-        color = [30, 180, 80]
+        color = [70, 130, 95]
     lon1, lat1 = d["coord"][u]
     lon2, lat2 = d["coord"][v]
     lines.append({"source": [lon1, lat1], "target": [lon2, lat2],
                   "color": color, "segment_id": seg,
-                  "width": 5 if seg in anom_set else 2,
+                  "width": 7 if seg in anom_set else (3 if drop > 0.15 else 1.2),
                   "label": f"{seg}: {sp:.0f} km/h (normal {normal:.0f})"})
 
 lats = [c[1] for c in d["coord"].values()]
@@ -180,9 +180,12 @@ layer = pdk.Layer("LineLayer", data=lines,
                   get_source_position="source", get_target_position="target",
                   get_color="color", get_width="width", pickable=True,
                   opacity=0.85)
-st.pydeck_chart(pdk.Deck(layers=[layer], initial_view_state=view,
-                         tooltip={"text": "{label}"}))
-st.caption(f"Network status at {T} — hover any road for details.")
+st.pydeck_chart(pdk.Deck(
+    layers=[layer],
+    initial_view_state=view,
+    map_style="https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json",
+    tooltip={"text": "{label}"}))
+st.caption(f"Network status at {T} — control-room schematic view, hover any road for details.")
 
 # ---------------- detail tabs ----------------
 tab1, tab2, tab3, tab4 = st.tabs(
